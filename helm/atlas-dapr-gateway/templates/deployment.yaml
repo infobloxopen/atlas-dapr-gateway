@@ -1,0 +1,98 @@
+{{- $dot := . }}
+{{- range $gateway := .Values.gatewayConfigurations }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" $dot }}-{{ $gateway.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+{{ include "chart.labels" $dot | indent 4 }}
+spec:
+  replicas: {{ $.Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "chart.fullname" $dot }}-{{ $gateway.name }}
+      app.kubernetes.io/name: {{ include "chart.name" $dot }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $.Values.internal.port | quote }}
+        dapr.io/enabled: "true"
+        dapr.io/app-id: {{ include "chart.fullname" $dot }}-{{ $gateway.name }}
+        dapr.io/app-port: "{{ $gateway.dapr.appPort }}"
+        dapr.io/app-protocol: "grpc"
+        dapr.io/log-level: {{ $gateway.dapr.logLevel }}
+        dapr.io/metrics-port: {{ $gateway.dapr.metricsPort | quote }}
+      labels:
+        app: {{ include "chart.fullname" $dot }}-{{ $gateway.name }}
+        app.kubernetes.io/name: {{ include "chart.name" $dot }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      {{- if $.Values.rbac.enable }}
+      serviceAccountName: {{ include "chart.fullname" $dot }}-serviceaccount
+      {{- end }}
+    {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $dot | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ $.Chart.Name }}
+          image: "{{ $.Values.image.registry }}{{ $.Values.image.name }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+
+          ports:
+            - name: grpc
+              containerPort: {{ $.Values.app.grpcPort }}
+              protocol: {{ $.Values.grpcProtocol }}
+            - name: http
+              containerPort: {{ $.Values.app.httpPort }}
+              protocol: {{ $.Values.httpProtocol }}
+            - name: internal
+              containerPort: {{ $.Values.internal.port }}
+          args:
+            - "--dapr.source={{ $gateway.dapr.source.pubsub }}:{{ $gateway.dapr.source.topic }}"
+            {{- $destinationList := list -}}
+            {{- range $destination := $gateway.dapr.destinationList }}
+            {{- $pair := printf "%s:%s" $destination.pubsub $destination.topic }}
+            {{- $destinationList = append $destinationList $pair }}
+            {{- end }}
+            - "--dapr.destination.list={{ join "," $destinationList }}"
+            - "--dapr.grpcPort={{ $gateway.dapr.grpcPort }}"
+            - "--dapr.appPort={{ $gateway.dapr.appPort }}"
+          {{- if $.Values.internal.enable }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ $.Values.internal.port }}
+              scheme: HTTP
+            initialDelaySeconds: 3
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ $.Values.internal.port }}
+              scheme: HTTP
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 10
+          {{- end }}
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml $dot | nindent 8 }}
+      {{- end }}
+    {{- with $.Values.affinity }}
+      affinity:
+        {{- toYaml $dot | nindent 8 }}
+    {{- end }}
+    {{- with $.Values.tolerations }}
+      tolerations:
+        {{- toYaml $dot | nindent 8 }}
+    {{- end }}
+---
+{{- end }}

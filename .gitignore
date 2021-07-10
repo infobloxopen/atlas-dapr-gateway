@@ -1,0 +1,7 @@
+bin
+.idea
+.docker-*
+.push-*
+.image-*
+deploy-*
+.id

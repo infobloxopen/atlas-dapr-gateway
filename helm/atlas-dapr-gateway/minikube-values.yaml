@@ -1,0 +1,50 @@
+
+version: latest
+docker:
+  registry: infoblox
+  username: "{ Fill this in }"
+  password: "{ Fill this in }"
+
+rbac:
+  enable: true
+
+#### Values that will be populated from env values
+env: "minikube"
+zone: "local"
+
+image:
+  pullPolicy: IfNotPresent
+
+app:
+  namespace: "atlas-dapr-gateway-{{ .Values.env }}"
+  httpPort: 8080
+  grpcPort: 9090
+
+internal:
+  enable: false
+  port: 8081
+
+secrets:
+  enabled: true
+
+gatewayConfigurations:
+# It's possible to use the clones of that service as a set of different gateways, each with its own configuration
+  - name: gateway1
+    dapr:
+      grpcPort: 50001
+      appPort: 1250
+      metricsPort: 10090
+      logLevel: debug
+      source:
+        pubsub: pubsub-subscribe
+        topic: topic-subscribe
+# This config shows how it's possible to route one message to a different pubsubs (pubsub-publish1 and pubsub-publish2)
+# and to the different topics in the same pubsub (topic-publish1 and topic-publish2 in pubsub-publish2)
+      destinationList:
+        - pubsub: pubsub-publish1
+          topic: topic-publish1
+        - pubsub: pubsub-publish2
+          topic: topic-publish1
+        - pubsub: pubsub-publish2
+          topic: topic-publish2
+
