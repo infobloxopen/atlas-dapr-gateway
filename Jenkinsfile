@@ -1,52 +1,70 @@
+@Library('jenkins.shared.library') _
+
 pipeline {
   agent {
     label 'ubuntu_docker_label'
   }
-  stages {
-    stage("Lint") {
-      steps {
-        sh "make fmt && git diff --exit-code"
-      }
-    }
-    stage("Test") {
-      steps {
-        sh "make test"
-      }
-    }
-    stage("Build") {
-      steps {
-        withDockerRegistry([credentialsId: "<insert-the-creds-id>", url: ""]) {
-          sh "make docker push"
-        }
-      }
-    }
-    stage("Push") {
-      when {
-        branch "master"
-      }
-      steps {
-        withDockerRegistry([credentialsId: "<insert-the-creds-id>", url: ""]) {
-          sh "make push IMAGE_VERSION=latest"
-        }
-      }
-    }
-    
-    stage('Push charts') {
-        steps {
-          withDockerRegistry([credentialsId: "<insert-the-creds-id>", url: ""]) {
-            withAWS(region:'<insert-the-region-id>', credentials:'<insert-the-creds-id>') {
-                sh "IMAGE_VERSION=\$(IMAGE_VERSION)-j$BUILD_NUMBER make push-chart"
-              }
-          }
-          archiveArtifacts artifacts: 'helm/$(CHART_NAME)-*.tgz'
-          archiveArtifacts artifacts: 'helm.properties'
-        }
-    }
+  environment {
+    HELM_IMAGE = "infoblox/helm:3.2.4-5b243a2"
+    VERSION = sh(script: "git describe --always --long --tags", returnStdout: true).trim()
+    TAG = "${env.VERSION}-j${env.BUILD_NUMBER}"
   }
-  post {
-    cleanup {
-      sh "make clean || true"
-      cleanWs()
+  stages {
+    stage("Prepare Build") {
+      steps {
+        prepareBuild()
+      }
+    }
+    stage("Build Image") {
+      steps {
+        sh 'make build image VERSION=$TAG'
+      }
+    }
+    stage("Package Chart") {
+      steps {
+        withAWS(credentials: "CICD_HELM", region: "us-east-1") {
+          sh '''
+            docker run --rm \
+                -e AWS_REGION \
+                -e AWS_ACCESS_KEY_ID \
+                -e AWS_SECRET_ACCESS_KEY \
+                -v $(pwd):/pkg \
+                $HELM_IMAGE package /pkg/deploy/atlas-dapr-gateway --app-version $TAG --version $TAG -d /pkg
+          '''
+        }
+      }
+    }
+    stage("Push Chart") {
+      when {
+        anyOf {
+          branch 'master'
+          branch 'ci'
+        }
+      }
+      steps {
+        withAWS(credentials: "CICD_HELM", region: "us-east-1") {
+          sh '''
+            chart_file=atlas-dapr-gateway-$TAG.tgz
+            docker run --rm \
+                -e AWS_REGION \
+                -e AWS_ACCESS_KEY_ID \
+                -e AWS_SECRET_ACCESS_KEY \
+                -v $(pwd):/pkg \
+                $HELM_IMAGE s3 push /pkg/$chart_file infobloxcto
+            echo "repo=infobloxcto" > build.properties
+            echo "chart=$chart_file" >> build.properties
+            echo "messageFormat=s3-artifact" >> build.properties
+            echo "customFormat=true" >> build.properties
+          '''
+        }
+        archiveArtifacts artifacts: 'build.properties'
+        archiveArtifacts artifacts: '*.tgz'
+      }
+      post {
+        success {
+          finalizeBuild(sh(script: 'make show-image-name VERSION=$TAG', returnStdout: true))
+        }
+      }
     }
   }
 }

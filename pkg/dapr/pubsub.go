@@ -98,7 +98,6 @@ func (p *PubSub) initSubscriber(appPort int) {
 
 func (p *PubSub) eventHandler(ctx context.Context, e *common.TopicEvent) (retry bool, err error) {
 	p.logger.Debugf("Incoming message from pubsub %q, topic %q, data: %s", e.PubsubName, e.Topic, e.Data)
-	p.publish(e.Data.([]byte))
 
-	return false, nil
+	return false, p.publish(e.Data.([]byte))
 }

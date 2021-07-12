@@ -48,7 +48,7 @@ func main() {
 		destination = append(destination, dapr.PubsubConfig{Name: s[0], Topic: s[1]})
 	}
 
-	err := dapr.InitPubsub(source, destination,	viper.GetInt("dapr.appPort"), viper.GetInt("dapr.grpcPort"), logger)
+	err := dapr.InitPubsub(source, destination, viper.GetInt("dapr.appPort"), viper.GetInt("dapr.grpcPort"), logger)
 	if err != nil {
 		logger.Fatalf("Cannot initialize pubsub: %v", err)
 	}

@@ -4,7 +4,7 @@
 PROJECT_ROOT            ?= $(PWD)
 BUILD_PATH              ?= bin
 DOCKERFILE_PATH         ?= $(CURDIR)/docker
-GO_IMAGE 				?= golang:1.16-alpine
+GO_IMAGE 				?= golang:1.16
 GO_RUNNER 				?= $(DOCKER_RUNNER) $(GO_IMAGE)
 
 # configuration for image names
@@ -63,11 +63,11 @@ all-atlas: vendor-atlas protobuf-atlas docker-atlas
 
 .PHONY fmt: fmt-atlas
 fmt-atlas:
-	@$(GO_RUNNER) go fmt $(GO_PACKAGES)
+	@go fmt ./...
 
 .PHONY test: test-atlas
 test-atlas: fmt-atlas
-	$(GO_RUNNER) go test $(GO_TEST_FLAGS) $(GO_PACKAGES)
+	@go test $(GO_TEST_FLAGS) $(GO_PACKAGES)
 
 docker-atlas:
 	@docker build -f $(SERVER_DOCKERFILE) -t $(SERVER_IMAGE):$(IMAGE_VERSION) .
